@@ -1,0 +1,33 @@
+:root {
+  --bg-0: #070A12;
+  --bg-1: #0B1020;
+  --surface-0: rgba(255, 255, 255, 0.06);
+  --surface-1: rgba(255, 255, 255, 0.10);
+  --border-0: rgba(255, 255, 255, 0.12);
+  --border-1: rgba(255, 255, 255, 0.18);
+
+  --text-0: rgba(255, 255, 255, 0.92);
+  --text-1: rgba(255, 255, 255, 0.72);
+  --text-2: rgba(255, 255, 255, 0.56);
+
+  --accent-0: #6EE7FF;
+  --accent-1: #8B5CF6;
+  --accent-2: #22C55E;
+
+  --shadow-0: 0 10px 30px rgba(0,0,0,.35);
+  --shadow-1: 0 18px 60px rgba(0,0,0,.55);
+
+  --r-1: 12px;
+  --r-2: 18px;
+  --r-3: 24px;
+
+  --container: 1120px;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    scroll-behavior: auto;
+  }
+}

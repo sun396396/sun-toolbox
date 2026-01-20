@@ -1,0 +1,13 @@
+# Netlify configuration for Abuji Toolbox (Vite + React SPA)
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redirect rule for Single Page Applications
+# This ensures that direct navigation to any route (e.g., /tools/text-transform)
+# will be handled by index.html and React Router.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
