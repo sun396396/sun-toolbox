@@ -61,7 +61,7 @@ function snapToCenter(pos, axis) {
   return { ...pos, [axis]: snapped }
 }
 
-export default function usePacmanGame() {
+export default function usePacmanGame({ sounds } = {}) {
   const [state, setState] = useState({
     status: 'idle', // idle | running | gameover
     score: 0,
@@ -93,6 +93,8 @@ export default function usePacmanGame() {
     },
     pelletsLeft: 0,
   })
+
+  const lastDotSoundAtRef = useRef(0)
 
   const dims = useMemo(() => {
     return {
@@ -130,6 +132,8 @@ export default function usePacmanGame() {
     worldRef.current.ghost.pos = { x: 12.5, y: 10.5 }
     worldRef.current.ghost.dir = 'left'
 
+    lastDotSoundAtRef.current = 0
+
     setState({ status: 'idle', score: 0 })
   }, [countPellets])
 
@@ -140,9 +144,13 @@ export default function usePacmanGame() {
   }, [])
 
   const gameOver = useCallback(() => {
+    if (sounds?.stopBgm) sounds.stopBgm()
+    if (sounds?.playEatGhost) sounds.playEatGhost()
+    if (sounds?.playGameOver) sounds.playGameOver()
+
     setState((s) => ({ ...s, status: 'gameover' }))
     stopLoop()
-  }, [stopLoop])
+  }, [sounds, stopLoop])
 
   const tryTurn = useCallback((entity, grid) => {
     const want = entity.wantDir
@@ -151,11 +159,9 @@ export default function usePacmanGame() {
     const dx = DIR[want].x
     const dy = DIR[want].y
 
-    // only allow turn near center to keep movement clean
     const nearCenterX = Math.abs(entity.pos.x - nearestCellCenter(entity.pos.x)) < 0.12
     const nearCenterY = Math.abs(entity.pos.y - nearestCellCenter(entity.pos.y)) < 0.12
 
-    // moving horizontally -> allow vertical turn when x is centered, and vice versa
     if ((want === 'up' || want === 'down') && !nearCenterX) return
     if ((want === 'left' || want === 'right') && !nearCenterY) return
 
@@ -163,7 +169,6 @@ export default function usePacmanGame() {
     const ny = entity.pos.y + dy * 0.55
 
     if (canMove(grid, nx, ny)) {
-      // snap to grid line on the perpendicular axis
       if (want === 'up' || want === 'down') {
         entity.pos = snapToCenter(entity.pos, 'x')
       } else {
@@ -189,7 +194,6 @@ export default function usePacmanGame() {
       entity.pos.x = nx
       entity.pos.y = ny
     } else {
-      // hit wall, stop and snap
       if (dir === 'left' || dir === 'right') {
         entity.pos.x = clamp(entity.pos.x, 0.5, dims.cols - 0.5)
         entity.pos.x = nearestCellCenter(entity.pos.x)
@@ -217,7 +221,6 @@ export default function usePacmanGame() {
 
     if (possible.length === 0) return 'none'
 
-    // avoid immediate reverse unless needed
     const reverse = {
       left: 'right',
       right: 'left',
@@ -228,7 +231,6 @@ export default function usePacmanGame() {
 
     const candidates = possible.length > 1 ? possible.filter((d) => d !== reverse) : possible
 
-    // greedy chase: pick dir that reduces manhattan distance
     let best = candidates[0]
     let bestDist = Infinity
 
@@ -243,7 +245,6 @@ export default function usePacmanGame() {
       }
     }
 
-    // slight randomness to feel less robotic
     if (Math.random() < 0.08) {
       return candidates[Math.floor(Math.random() * candidates.length)]
     }
@@ -262,22 +263,25 @@ export default function usePacmanGame() {
     const pac = world.pacman
     const ghost = world.ghost
 
-    // input turn
     tryTurn(pac, grid)
 
-    // move
     moveEntity(pac, grid, dt)
 
-    // eat pellet at pacman cell
     const cx = Math.floor(pac.pos.x)
     const cy = Math.floor(pac.pos.y)
     if (grid[cy] && grid[cy][cx] === 1) {
       grid[cy][cx] = 2
       world.pelletsLeft -= 1
       setState((s) => ({ ...s, score: s.score + 10 }))
+
+      // throttle dot sound
+      const now = performance.now()
+      if (sounds?.playEatDot && now - lastDotSoundAtRef.current > 60) {
+        lastDotSoundAtRef.current = now
+        sounds.playEatDot()
+      }
     }
 
-    // ghost AI: choose dir when near cell center (like intersections)
     const nearX = Math.abs(ghost.pos.x - nearestCellCenter(ghost.pos.x)) < 0.12
     const nearY = Math.abs(ghost.pos.y - nearestCellCenter(ghost.pos.y)) < 0.12
     if (nearX && nearY) {
@@ -286,25 +290,22 @@ export default function usePacmanGame() {
 
     moveEntity(ghost, grid, dt)
 
-    // collide
     const d = Math.hypot(pac.pos.x - ghost.pos.x, pac.pos.y - ghost.pos.y)
     if (d < (pac.radius + ghost.radius)) {
       gameOver()
       return
     }
 
-    // draw
     render(ctx, canvas, grid, world, dims)
 
-    // update mouth animation
     pac.mouth = (pac.mouth + dt * 10) % (Math.PI * 2)
 
-    // win condition (optional): if no pellets, just idle
     if (world.pelletsLeft <= 0) {
+      if (sounds?.stopBgm) sounds.stopBgm()
       setState((s) => ({ ...s, status: 'idle' }))
       stopLoop()
     }
-  }, [chooseGhostDir, dims, gameOver, moveEntity, stopLoop, tryTurn])
+  }, [chooseGhostDir, dims, gameOver, moveEntity, sounds, stopLoop, tryTurn])
 
   const loop = useCallback((t) => {
     if (!lastRef.current) lastRef.current = t
@@ -317,12 +318,15 @@ export default function usePacmanGame() {
   }, [step])
 
   const start = useCallback(() => {
+    if (sounds?.playBgm) sounds.playBgm()
     setState((s) => ({ ...s, status: 'running' }))
     stopLoop()
     rafRef.current = requestAnimationFrame(loop)
-  }, [loop, stopLoop])
+  }, [loop, sounds, stopLoop])
 
   const restart = useCallback(() => {
+    if (sounds?.stopBgm) sounds.stopBgm()
+
     stopLoop()
     gridRef.current = cloneMap()
     countPellets()
@@ -336,9 +340,14 @@ export default function usePacmanGame() {
     world.ghost.pos = { x: 12.5, y: 10.5 }
     world.ghost.dir = 'left'
 
+    lastDotSoundAtRef.current = 0
+
     setState({ status: 'running', score: 0 })
+
+    if (sounds?.playBgm) sounds.playBgm()
+
     rafRef.current = requestAnimationFrame(loop)
-  }, [countPellets, loop, stopLoop])
+  }, [countPellets, loop, sounds, stopLoop])
 
   const bindKeyboard = useCallback(() => {
     function onKeyDown(e) {
@@ -346,7 +355,6 @@ export default function usePacmanGame() {
       if (!dir) return
       e.preventDefault()
       worldRef.current.pacman.wantDir = dir
-      // if standing still, also set current dir
       if (worldRef.current.pacman.dir === 'none') {
         worldRef.current.pacman.dir = dir
       }
@@ -371,9 +379,6 @@ export default function usePacmanGame() {
 }
 
 function render(ctx, canvas, grid, world, dims) {
-  const tile = world.tile
-
-  // Fit-to-canvas: compute scale based on desired tile size and canvas size
   const cols = dims.cols
   const rows = dims.rows
 
@@ -385,17 +390,14 @@ function render(ctx, canvas, grid, world, dims) {
   const ox = Math.floor((canvas.width - t * cols) / 2)
   const oy = Math.floor((canvas.height - t * rows) / 2)
 
-  // clear
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-  // background
   const bg = ctx.createLinearGradient(0, 0, canvas.width, canvas.height)
   bg.addColorStop(0, 'rgba(110,231,255,0.06)')
   bg.addColorStop(1, 'rgba(139,92,246,0.06)')
   ctx.fillStyle = bg
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-  // maze
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       const v = grid[y][x]
@@ -403,14 +405,12 @@ function render(ctx, canvas, grid, world, dims) {
       const py = oy + y * t
 
       if (v === 0) {
-        // wall
         ctx.fillStyle = 'rgba(110,231,255,0.10)'
         ctx.strokeStyle = 'rgba(110,231,255,0.22)'
         roundRect(ctx, px + 2, py + 2, t - 4, t - 4, 8)
         ctx.fill()
         ctx.stroke()
       } else if (v === 1) {
-        // pellet
         ctx.fillStyle = 'rgba(255,255,255,0.72)'
         ctx.beginPath()
         ctx.arc(px + t / 2, py + t / 2, Math.max(2, t * 0.08), 0, Math.PI * 2)
@@ -419,21 +419,14 @@ function render(ctx, canvas, grid, world, dims) {
     }
   }
 
-  // pacman
   drawPacman(ctx, world.pacman, { ox, oy, t })
-
-  // ghost
   drawGhost(ctx, world.ghost, { ox, oy, t })
 
-  // subtle vignette
   const vg = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, 40, canvas.width / 2, canvas.height / 2, canvas.width / 1.2)
   vg.addColorStop(0, 'rgba(0,0,0,0)')
   vg.addColorStop(1, 'rgba(0,0,0,0.35)')
   ctx.fillStyle = vg
   ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-  // eslint no-unused-vars
-  void tile
 }
 
 function drawPacman(ctx, pac, { ox, oy, t }) {
@@ -441,14 +434,13 @@ function drawPacman(ctx, pac, { ox, oy, t }) {
   const py = oy + pac.pos.y * t
   const r = pac.radius * t
 
-  const dir = pac.dir
   const dirAngle = {
     right: 0,
     left: Math.PI,
     up: -Math.PI / 2,
     down: Math.PI / 2,
     none: 0,
-  }[dir] ?? 0
+  }[pac.dir] ?? 0
 
   const mouth = (Math.sin(pac.mouth) * 0.22 + 0.28)
 
@@ -481,7 +473,6 @@ function drawGhost(ctx, ghost, { ox, oy, t }) {
   ctx.shadowColor = 'rgba(255,77,109,0.25)'
   ctx.shadowBlur = 16
 
-  // body
   ctx.beginPath()
   ctx.arc(0, -r * 0.2, r, Math.PI, 0)
   ctx.lineTo(r, r)
@@ -489,7 +480,6 @@ function drawGhost(ctx, ghost, { ox, oy, t }) {
   ctx.closePath()
   ctx.fill()
 
-  // eyes
   ctx.shadowBlur = 0
   ctx.fillStyle = 'rgba(255,255,255,0.92)'
   ctx.beginPath()
